@@ -3,6 +3,7 @@ package com.abolfadl.forexma
 import org.apache.spark._
 import org.apache.spark.SparkContext._
 import org.apache.spark.sql._
+import org.apache.spark.sql.functions._
 import org.apache.log4j._
 import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.functions._
@@ -26,7 +27,9 @@ object DataFrames {
     val dotToRemove = ".".toSet
     val colonToRemove = ":".toSet
     
-    (fields(1).split(":")(1).toInt,(fields(0).filterNot(dotToRemove)+fields(1).filterNot(colonToRemove)).toLong, fields(5).toDouble)
+    //(fields(1).split(":")(1).toInt,(fields(0).filterNot(dotToRemove)+fields(1).filterNot(colonToRemove)).toLong, fields(5).toDouble)
+    (fields(1).split(":")(1).toInt,fields(0).replace(".", "-")+" "+fields(1)+":00", fields(5).toDouble)
+    
     
   }
   
@@ -50,6 +53,7 @@ object DataFrames {
     return quotesWithSMA.withColumn(cr,( quotesWithSMA("close")- (quotesWithSMA("SMA")+(quotesWithSMA("close")/MAv.toDouble) -  (quotesWithSMA("SMA")/MAv.toDouble)) )/pipVal).drop(quotesWithSMA.col("close")).drop(quotesWithSMA.col("SMA"))
    }
   } 
+   
   
   /** Our main function where the action happens */
   def main(args: Array[String]) {
@@ -66,10 +70,13 @@ object DataFrames {
       .getOrCreate()
     
     // Inputs
-    val MAv:Int = 33 // Moving average
-    val timeFrame:Int = 30 // Time frame in minutes (dont exceed 60)
-    val triggerVal:Int = 20  
-  
+    val MAv:Int = 33               // Moving average
+    val timeFrame:Int = 30         // Time frame in minutes (dont exceed 60)
+    val triggerVal:Double = 20.0   // Threshold of sending a trigger
+    val thresholdAlarm:Int = 31    // Minimum time between two triggers 
+    
+    
+    
     val eurStrength = getMATF(spark, "../EURUSDs.csv", MAv, 0.0001, 1,"EUR",timeFrame).cache()
     val cadStrength = getMATF(spark, "../USDCADs.csv", MAv, 0.0001, 1,"CAD",timeFrame).cache()
     val gbpStrength = getMATF(spark, "../GBPUSDs.csv", MAv, 0.0001, -1,"GBP",timeFrame).cache()
@@ -78,17 +85,39 @@ object DataFrames {
     val chfStrength = getMATF(spark, "../USDCHFs.csv", MAv, 0.0001, 1,"CHF",timeFrame).cache()
     val audStrength = getMATF(spark, "../AUDUSDs.csv", MAv, 0.0001, -1,"AUD",timeFrame).cache()
   
-  
+  // Joining strengths  
   val total = cadStrength.join(eurStrength,"date").join(gbpStrength,"date").join(jpyStrength,"date").join(nzdStrength,"date").join(chfStrength,"date").join(audStrength,"date").cache()
+  
+  // Averaging strengths
   val averageTotal = total.withColumn("AVG",(total("EUR")+total("CAD")+total("JPY")+total("CHF")+total("NZD")+total("AUD")+total("GBP"))/7.0).cache()
-  averageTotal.show()
-
+ 
+  // Filtering according to thresholds
+  val filteredAverageTotalS = averageTotal.filter(averageTotal("AVG")>triggerVal).cache()
+  val filteredAverageTotalB = averageTotal.filter(averageTotal("AVG")<(-1.0*triggerVal)).cache()
+  
+  // Including date before triggering the threshold
+  val wSpec1 = Window.orderBy("date")
+  val withprevdateColumnS = filteredAverageTotalS.withColumn("PrevDate",lag(filteredAverageTotalS("date"),1).over(wSpec1)).cache()
+  val withprevdateColumnB = filteredAverageTotalB.withColumn("PrevDate",lag(filteredAverageTotalB("date"),1).over(wSpec1)).cache()
+  
+  
+  // Finding time difference between dates above threshold
+  import spark.implicits._
+  val differenceDateS = withprevdateColumnS.withColumn("DiffDate",(unix_timestamp(withprevdateColumnS("date"))-unix_timestamp(withprevdateColumnS("PrevDate")))/60D).cache()
+  val differenceDateB = withprevdateColumnB.withColumn("DiffDate",(unix_timestamp(withprevdateColumnB("date"))-unix_timestamp(withprevdateColumnB("PrevDate")))/60D).cache()
+ 
+  
+  // Selecting triggers which occur after minimum threshold time
+  val filteredByThresholdS = differenceDateS.filter(differenceDateS("DiffDate")>thresholdAlarm).drop(differenceDateS.col("PrevDate"))
+  val filteredByThresholdB = differenceDateB.filter(differenceDateB("DiffDate")>thresholdAlarm).drop(differenceDateB.col("PrevDate"))
+  filteredByThresholdS.show()
+  filteredByThresholdB.show()
+  
+  // Savers
   //averageTotal.write.format("csv").save("C:/SparkScala/out")
   //averageTotal.rdd.saveAsTextFile("C:/SparkScala/out")
   //averageTotal.write.csv("C:/SparkScala/out")
   
-  val wSpec1 = Window.orderBy("date")
-  averageTotal.withColumn("Trigger",lag(averageTotal("AVG"), 2).over(wSpec1)).show()
     
     spark.stop()
   }
