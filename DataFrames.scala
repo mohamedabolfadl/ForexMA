@@ -65,10 +65,10 @@ object DataFrames {
       .config("spark.sql.warehouse.dir", "file:///C:/Temp") // Necessary to work around a Windows bug in Spark 2.0.0; omit if you're not on Windows.
       .getOrCreate()
     
-      // Inputs
-      val MAv:Int = 10 // Moving average
-      val timeFrame:Int =15 // Time frame in minutes (dont exceed 60)
-      
+    // Inputs
+    val MAv:Int = 33 // Moving average
+    val timeFrame:Int = 30 // Time frame in minutes (dont exceed 60)
+    val triggerVal:Int = 20  
   
     val eurStrength = getMATF(spark, "../EURUSDs.csv", MAv, 0.0001, 1,"EUR",timeFrame).cache()
     val cadStrength = getMATF(spark, "../USDCADs.csv", MAv, 0.0001, 1,"CAD",timeFrame).cache()
@@ -80,9 +80,15 @@ object DataFrames {
   
   
   val total = cadStrength.join(eurStrength,"date").join(gbpStrength,"date").join(jpyStrength,"date").join(nzdStrength,"date").join(chfStrength,"date").join(audStrength,"date").cache()
-  val averageTotal = total.withColumn("AVG",(total("EUR")+total("CAD")+total("JPY")+total("CHF")+total("NZD")+total("AUD")+total("GBP"))/7.0).show()
-  
+  val averageTotal = total.withColumn("AVG",(total("EUR")+total("CAD")+total("JPY")+total("CHF")+total("NZD")+total("AUD")+total("GBP"))/7.0).cache()
+  averageTotal.show()
 
+  //averageTotal.write.format("csv").save("C:/SparkScala/out")
+  //averageTotal.rdd.saveAsTextFile("C:/SparkScala/out")
+  //averageTotal.write.csv("C:/SparkScala/out")
+  
+  val wSpec1 = Window.orderBy("date")
+  averageTotal.withColumn("Trigger",lag(averageTotal("AVG"), 2).over(wSpec1)).show()
     
     spark.stop()
   }
