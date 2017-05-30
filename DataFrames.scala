@@ -124,8 +124,13 @@ object DataFrames {
  import spark.implicits._
   val averageTotalWithPreviousMinute = averageTotal.withColumn("PrevTime",lag(averageTotal("USDCADminu"),1).over(wSpec1)).withColumn("PrevDate",lag(averageTotal("date"),1).over(wSpec1)).cache()
   
-  averageTotalWithPreviousMinute.filter((($"USDCADminu"-$"PrevTime")>1) && (($"USDCADminu"%10>5 && $"PrevTime"%10<5)|| ($"USDCADminu"%10>0 && $"USDCADminu"%10<5 && $"PrevTime"%10>5)) ).show()
-  
+ // averageTotalWithPreviousMinute.filter((($"USDCADminu"-$"PrevTime")>1) && (($"USDCADminu"%10>5 && $"PrevTime"%10<5)|| ($"USDCADminu"%10>0 && $"USDCADminu"%10<5 && $"PrevTime"%10>5)) ).show()
+    val controlMin = (s: String) => { if(s.size<2) {"0"+s}else {s} }
+  val updateDate = (dt: String, minu: String) => {   dt             }
+  val currPrevGaps =  averageTotalWithPreviousMinute.filter((($"USDCADminu"-$"PrevTime")>1) && (($"USDCADminu"%10>5 && $"PrevTime"%10<5)|| ($"USDCADminu"%10>0 && $"USDCADminu"%10<5 && $"PrevTime"%10>5)) ).withColumn("PrevCAD",lag(averageTotalWithPreviousMinute("CAD"),1).over(wSpec1)).withColumn("PrevEUR",lag(averageTotalWithPreviousMinute("EUR"),1).over(wSpec1)).withColumn("PrevGBP",lag(averageTotalWithPreviousMinute("GBP"),1).over(wSpec1)).withColumn("PrevJPY",lag(averageTotalWithPreviousMinute("JPY"),1).over(wSpec1)).withColumn("PrevNZD",lag(averageTotalWithPreviousMinute("NZD"),1).over(wSpec1)).withColumn("PrevCHF",lag(averageTotalWithPreviousMinute("CHF"),1).over(wSpec1)).withColumn("PrevAUD",lag(averageTotalWithPreviousMinute("AUD"),1).over(wSpec1)).withColumn("PrevAVG",lag(averageTotalWithPreviousMinute("AVG"),1).over(wSpec1)).cache()
+  val filledGaps = currPrevGaps.withColumn("EURn",(currPrevGaps("EUR")+currPrevGaps("PrevEUR"))/2).drop("EUR").drop("PrevEUR").withColumn("CADn",(currPrevGaps("CAD")+currPrevGaps("PrevCAD"))/2).drop("CAD").drop("PrevCAD").withColumn("GBPn",(currPrevGaps("GBP")+currPrevGaps("PrevGBP"))/2).drop("GBP").drop("PrevGBP").withColumn("JPYn",(currPrevGaps("JPY")+currPrevGaps("PrevJPY"))/2).drop("JPY").drop("PrevJPY").withColumn("NZDn",(currPrevGaps("NZD")+currPrevGaps("PrevNZD"))/2).drop("NZD").drop("PrevNZD").withColumn("CHFn",(currPrevGaps("CHF")+currPrevGaps("PrevCHF"))/2).drop("CHF").drop("PrevCHF").withColumn("AUDn",(currPrevGaps("AUD")+currPrevGaps("PrevAUD"))/2).drop("AUD").drop("PrevAUD").withColumn("AVGn",(currPrevGaps("AVG")+currPrevGaps("PrevAVG"))/2).drop("AVG").drop("PrevAVG").withColumn("NewTimeMin",(lit(5.0) * ceil(currPrevGaps("PrevTime")/5D)).cast("Int").cast("String")).show()
+ 
+    
   // Filtering according to thresholds
   val filteredAverageTotalS = averageTotal.filter(averageTotal("AVG")>triggerVal).cache()
   val filteredAverageTotalB = averageTotal.filter(averageTotal("AVG")<(-1.0*triggerVal)).cache()
