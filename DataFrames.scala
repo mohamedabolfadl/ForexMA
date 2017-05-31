@@ -1,4 +1,4 @@
-package com.sundogsoftware.spark
+package com.abolfadl.forexma
 
 import org.apache.spark._
 import org.apache.spark.SparkContext._
@@ -96,7 +96,7 @@ object DataFrames {
     // Inputs
     val MAv:Int = 33               // Moving average
     val timeFrame:Int = 30         // Time frame in minutes (dont exceed 60)
-    val triggerVal:Double = 20.0   // Threshold of sending a trigger
+    val triggerVal:Double = 15.0   // Threshold of sending a trigger
     val thresholdAlarm:Int = 31    // Minimum time between two triggers 
     val wSpec1 = Window.orderBy("date")// Window for ordering Dataframes according to 'date' column
     
@@ -156,31 +156,39 @@ object DataFrames {
     
   //----------------------------------  STAGE B : EXTRACT TIME FRAME   ---------------------------------------------------
   
+  // Function to extract minute from the time stamp
+  val getMin_D = (dt: String) => { dt.substring(14, 16).toInt             }
+  val getMin = udf(getMin_D)
   
+  // Filter according to the time frame
+  val extracted_TF = completeData.filter(getMin($"date")%timeFrame===0).cache()
   
-  
+  extracted_TF.show()
   //----------------------------------  STAGE c : FILTER TRIGGER POINTS   ---------------------------------------------------
    
   
   // Filtering according to thresholds
-  val filteredAverageTotalS = averageTotal.filter(averageTotal("AVG")>triggerVal).cache()
-  val filteredAverageTotalB = averageTotal.filter(averageTotal("AVG")<(-1.0*triggerVal)).cache()
+  val filteredAverageTotalS = extracted_TF.filter(extracted_TF("AVG")>triggerVal).cache()
+  val filteredAverageTotalB = extracted_TF.filter(extracted_TF("AVG")<(-1.0*triggerVal)).cache()
+  filteredAverageTotalS.show()
   
   // Including date before triggering the threshold
   val withprevdateColumnS = filteredAverageTotalS.withColumn("PrevDate",lag(filteredAverageTotalS("date"),1).over(wSpec1)).cache()
   val withprevdateColumnB = filteredAverageTotalB.withColumn("PrevDate",lag(filteredAverageTotalB("date"),1).over(wSpec1)).cache()
-  
+  withprevdateColumnS.show()
   
   // Finding time difference between dates above threshold
   import spark.implicits._
   val differenceDateS = withprevdateColumnS.withColumn("DiffDate",(unix_timestamp(withprevdateColumnS("date"))-unix_timestamp(withprevdateColumnS("PrevDate")))/60D).cache()
   val differenceDateB = withprevdateColumnB.withColumn("DiffDate",(unix_timestamp(withprevdateColumnB("date"))-unix_timestamp(withprevdateColumnB("PrevDate")))/60D).cache()
- 
+ differenceDateS.show()
   
   // Selecting triggers which occur after minimum threshold time
   val filteredByThresholdS = differenceDateS.filter(differenceDateS("DiffDate")>thresholdAlarm).drop(differenceDateS.col("PrevDate"))
   val filteredByThresholdB = differenceDateB.filter(differenceDateB("DiffDate")>thresholdAlarm).drop(differenceDateB.col("PrevDate"))
 
+  filteredByThresholdS.show()
+//  filteredByThresholdB.show()
   
   // Savers
   //averageTotal.write.format("csv").save("C:/SparkScala/out")
