@@ -102,11 +102,11 @@ object DataFrames {
     
     // Inputs
     val MAv:Int = 33               // Moving average
-    val timeFrame:Int = 5         // Time frame in minutes (dont exceed 60)
-    val triggerVal:Double = 20.0   // Threshold of sending a trigger
+    val timeFrame:Int = 30         // Time frame in minutes (dont exceed 60)
+    val triggerVal:Double = 25.0   // Threshold of sending a trigger
     val thresholdAlarm:Int = 121    // Minimum time between two triggers 
     val wSpec1 = Window.orderBy("date")// Window for ordering Dataframes according to 'date' column
-    
+    val persistFlag = false
 
     // Obtain 1 minute accuracy data
     val eurStrength = getMATF(spark, "../EURUSDs.csv", MAv, 0.0001, -1,"EUR",1,"EURUSD").persist(MEMORY_ONLY_SER)
@@ -122,6 +122,8 @@ object DataFrames {
     
   // Joining strengths  
   val averageTotal = cadStrength.join(eurStrength,"date").join(gbpStrength,"date").join(jpyStrength,"date").join(nzdStrength,"date").join(chfStrength,"date").join(audStrength,"date").drop("EURUSDminu").drop("GBPUSDminu").drop("USDJPYminu").drop("NZDUSDminu").drop("USDCHFminu").drop("AUDUSDminu").persist(MEMORY_ONLY_SER)
+  if(persistFlag)
+  {
   eurStrength.unpersist()
   cadStrength.unpersist()
   gbpStrength.unpersist()
@@ -129,7 +131,7 @@ object DataFrames {
   nzdStrength.unpersist()
   chfStrength.unpersist()
   audStrength.unpersist()
-
+  }
   
   // Averaging strengths
   //val averageTotal = total.withColumn("AVG",(total("EUR")+total("CAD")+total("JPY")+total("CHF")+total("NZD")+total("AUD")+total("GBP"))/7.0).persist(MEMORY_ONLY_SER)
@@ -149,29 +151,41 @@ object DataFrames {
 
   // Filtering the locations where the 5 minute data is missing and including previous values of currs.
   val currPrevGaps =  averageTotalWithPreviousMinute.withColumn("PrevCAD",lag(averageTotalWithPreviousMinute("CAD"),1).over(wSpec1)).withColumn("PrevEUR",lag(averageTotalWithPreviousMinute("EUR"),1).over(wSpec1)).withColumn("PrevGBP",lag(averageTotalWithPreviousMinute("GBP"),1).over(wSpec1)).withColumn("PrevJPY",lag(averageTotalWithPreviousMinute("JPY"),1).over(wSpec1)).withColumn("PrevNZD",lag(averageTotalWithPreviousMinute("NZD"),1).over(wSpec1)).withColumn("PrevCHF",lag(averageTotalWithPreviousMinute("CHF"),1).over(wSpec1)).withColumn("PrevAUD",lag(averageTotalWithPreviousMinute("AUD"),1).over(wSpec1)).filter((($"USDCADminu"-$"PrevTime")>1) && (($"USDCADminu"%10>5 && $"PrevTime"%10<5)|| ($"USDCADminu"%10>0 && $"USDCADminu"%10<5 && $"PrevTime"%10>5)) ).persist(MEMORY_ONLY_SER)
+
+    if(persistFlag)
+  {
 averageTotalWithPreviousMinute.unpersist()
-  
+  }  
   // Interpolation between past and future values to obtain the value at 5 min
   val filledGaps = currPrevGaps.withColumn("EURn",(currPrevGaps("EUR")+currPrevGaps("PrevEUR"))/2).drop("EUR").drop("PrevEUR").withColumn("CADn",(currPrevGaps("CAD")+currPrevGaps("PrevCAD"))/2).drop("CAD").drop("PrevCAD").withColumn("GBPn",(currPrevGaps("GBP")+currPrevGaps("PrevGBP"))/2).drop("GBP").drop("PrevGBP").withColumn("JPYn",(currPrevGaps("JPY")+currPrevGaps("PrevJPY"))/2).drop("JPY").drop("PrevJPY").withColumn("NZDn",(currPrevGaps("NZD")+currPrevGaps("PrevNZD"))/2).drop("NZD").drop("PrevNZD").withColumn("CHFn",(currPrevGaps("CHF")+currPrevGaps("PrevCHF"))/2).drop("CHF").drop("PrevCHF").withColumn("AUDn",(currPrevGaps("AUD")+currPrevGaps("PrevAUD"))/2).drop("AUD").drop("PrevAUD").withColumn("NewTimeMin",(lit(5.0) * ceil(currPrevGaps("PrevTime")/5D)).cast("Int").cast("String")).persist(MEMORY_ONLY_SER)
+
+    if(persistFlag)
+  {
 currPrevGaps.unpersist()
-  
+  }  
   // Insert the new date at the 5 min intervals
   val filledGapswithDate = filledGaps.withColumn("NewDate",updateDate(filledGaps("date"),filledGaps("NewTimeMin"))).drop("date").drop("PrevTime").drop("PrevDate").drop("USDCADminu").persist(MEMORY_ONLY_SER)
+  if(persistFlag)
+  {
 filledGaps.unpersist()
-  
+  }  
   // Renaming the column names to facilitate joining
   val newNames = Seq("EUR", "CAD", "GBP", "JPY","NZD","CHF","AUD","USDCADminu","date")
 
   
   val dfRenamed = filledGapswithDate.toDF(newNames: _*).persist(MEMORY_ONLY_SER)
+  if(persistFlag)
+  {
 filledGapswithDate.unpersist()
-  
+  }  
   // Reordering the columns
   val columns: Array[String] = dfRenamed.columns
   val reorderedColumnNames: Array[String] = Array("date","USDCADminu","CAD","EUR","GBP","JPY","NZD","CHF","AUD") // do the reordering you want
   val averageTotal_Reordered: DataFrame = dfRenamed.select(reorderedColumnNames.head, reorderedColumnNames.tail: _*)
+  if(persistFlag)
+  {
 dfRenamed.unpersist()
-  
+  }  
  
  println("Merging")
  // Removing the temporary column of the minute field
@@ -180,9 +194,11 @@ dfRenamed.unpersist()
   // Merging data with interpolated data
   val completeData = averageTotal.union(averageTotal_Reordered).orderBy("date")
    println("Merged")
+  if(persistFlag)
+  {
 
   averageTotal_Reordered.unpersist()
-
+  }
     
   //----------------------------------  STAGE B : EXTRACT TIME FRAME AND PERFORM MA  ---------------------------------------------------
   
@@ -198,7 +214,10 @@ completeData.unpersist()
   val extracted_MA = computeMA(extracted_TF.drop("USDCADminu"),MAv).persist(MEMORY_ONLY_SER)
    println("MA extracted")
 
+  if(persistFlag)
+  {
   extracted_TF.unpersist()
+  }
   //extracted_MA.show()
  
   
@@ -210,34 +229,52 @@ completeData.unpersist()
   // Filtering according to thresholds
   val filteredAverageTotalS = extracted_MA.filter(extracted_MA("AVG")>triggerVal).persist(MEMORY_ONLY_SER)
   val filteredAverageTotalB = extracted_MA.filter(extracted_MA("AVG")<(-1.0*triggerVal)).persist(MEMORY_ONLY_SER)
-extracted_MA.unpersist()
-   println("A")
+  if(persistFlag)
+  {
 
+  extracted_MA.unpersist()
+  }
+  
   // Including date before triggering the threshold
   val withprevdateColumnS = filteredAverageTotalS.withColumn("PrevDate",lag(filteredAverageTotalS("date"),1).over(wSpec1)).persist(MEMORY_ONLY_SER)
   val withprevdateColumnB = filteredAverageTotalB.withColumn("PrevDate",lag(filteredAverageTotalB("date"),1).over(wSpec1)).persist(MEMORY_ONLY_SER)
-filteredAverageTotalS.unpersist()
+  if(persistFlag)
+  {
+
+  filteredAverageTotalS.unpersist()
   filteredAverageTotalB.unpersist()
-   println("B")
+  }
   // Finding time difference between dates above threshold
   import spark.implicits._
   val differenceDateS = withprevdateColumnS.withColumn("DiffDate",(unix_timestamp(withprevdateColumnS("date"))-unix_timestamp(withprevdateColumnS("PrevDate")))/60D).persist(MEMORY_ONLY_SER)
   val differenceDateB = withprevdateColumnB.withColumn("DiffDate",(unix_timestamp(withprevdateColumnB("date"))-unix_timestamp(withprevdateColumnB("PrevDate")))/60D).persist(MEMORY_ONLY_SER)
-withprevdateColumnS.unpersist()
+  if(persistFlag)
+  {
+
+  withprevdateColumnS.unpersist()
   withprevdateColumnB.unpersist()
-   println("C")
+  }
   // Selecting triggers which occur after minimum threshold time
   val filteredByThresholdS = differenceDateS.filter(differenceDateS("DiffDate")>thresholdAlarm).drop(differenceDateS.col("PrevDate"))
   val filteredByThresholdB = differenceDateB.filter(differenceDateB("DiffDate")>thresholdAlarm).drop(differenceDateB.col("PrevDate"))
+  if(persistFlag)
+  {
 differenceDateS.unpersist()
 differenceDateB.unpersist()
- println("D")
-  
+  }
+  filteredByThresholdB.show()
+  filteredByThresholdS.show()
   // Savers
-  filteredByThresholdB.write.format("csv").save("C:/SparkScala/2016_out_B")
-  filteredByThresholdS.write.format("csv").save("C:/SparkScala/2016_out_S")
+  //println("Saving buys")
+  //filteredByThresholdB.write.format("csv").save("C:/SparkScala/2016_out_B")
+  //println("Saving sells")
+  //filteredByThresholdS.write.format("csv").save("C:/SparkScala/2016_out_S")
   
-  //averageTotal.rdd.saveAsTextFile("C:/SparkScala/out")
+  println("Done")
+  //filteredByThresholdB.rdd.saveAsTextFile("C:/SparkScala/2016_out_B")
+  //filteredByThresholdB.rdd.saveAsTextFile("C:/SparkScala/2016_out_S")
+  
+  
   //averageTotal.write.csv("C:/SparkScala/out")
   
   }
