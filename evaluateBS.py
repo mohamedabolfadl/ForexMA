@@ -6,10 +6,18 @@ Created on Wed Jun 07 08:14:32 2017
 """
 
 import csv 
-from sklearn.neural_network import MLPClassifier
+#from sklearn.neural_network import MLPClassifier
 #def getDateDifferenceTrigger(currDt, dt_x):
-    
-    
+import pandas as pd
+import numpy as np
+
+def getDF(inp):
+    data = np.array(inp)
+    return pd.DataFrame(data=data[1:,0:],columns=data[0,0:])  
+        
+        
+        
+        
 
 def getResults(fileName, pipsize, spread, target, BS_key,dt_b,dt_s):
     feu = open(fileName, "rb")
@@ -236,13 +244,13 @@ if not (len(EUb) == len(GUb) ==len(UJb) ==len(AUb) ==len(UHb) ==len(NUb) ==len(U
     
 i = 0
 #Compiling sells
-features_s=[['St_E_s','St_G_s','St_J_s','St_A_s','St_H_s','St_N_s','St_C_s','Time_day_s','Time_diff_s']]
-res_s = [['res_E','res_G','res_J','res_A','res_H','res_N','res_C']]
+features_s=[['id','EUR','GBP','JPY','AUD','CHF','NZD','CAD','Time_day','Time_diff']]
+res_s = [['id','res_EUR','res_GBP','res_JPY','res_AUD','res_CHF','res_NZD','res_CAD']]
 while i<len(EUs):
-    curr_res = [EUs[i][0],GUs[i][0],UJs[i][0],AUs[i][0],UHs[i][0],NUs[i][0],UCs[i][0]]
+    curr_res = [i,EUs[i][0],GUs[i][0],UJs[i][0],AUs[i][0],UHs[i][0],NUs[i][0],UCs[i][0]]
          
     if not (-1 in curr_res):
-        features_s.append([stre_s[i],strg_s[i],strj_s[i],stra_s[i],strh_s[i],strn_s[i],strc_s[i], sellTimes[i], diffDate_s[i] ])    
+        features_s.append([i,stre_s[i],strg_s[i],strj_s[i],stra_s[i],strh_s[i],strn_s[i],strc_s[i], sellTimes[i], diffDate_s[i] ])    
         res_s.append(curr_res)
     i = i + 1
 
@@ -251,12 +259,12 @@ while i<len(EUs):
 
 i = 0
 #Compiling buys
-features_b=[['St_E_b','St_G_b','St_J_b','St_A_b','St_H_b','St_N_b','St_C_b','Time_day_b','Time_diff_b']]
-res_b = [['res_E','res_G','res_J','res_A','res_H','res_N','res_C']]
+features_b=[['id','EUR','GBP','JPY','AUD','CHF','NZD','CAD','Time_day','Time_diff']]
+res_b = [['id','res_EUR','res_GBP','res_JPY','res_AUD','res_CHF','res_NZD','res_CAD']]
 while i<len(EUb):
-    curr_res = [EUb[i][0],GUb[i][0],UJb[i][0],AUb[i][0],UHb[i][0],NUb[i][0],UCb[i][0]]  
+    curr_res = [i,EUb[i][0],GUb[i][0],UJb[i][0],AUb[i][0],UHb[i][0],NUb[i][0],UCb[i][0]]  
     if not (-1 in curr_res):
-        features_b.append([stre_b[i],strg_b[i],strj_b[i],stra_b[i],strh_b[i],strn_b[i],strc_b[i], buyTimes[i], diffDate_b[i] ])    
+        features_b.append([i,stre_b[i],strg_b[i],strj_b[i],stra_b[i],strh_b[i],strn_b[i],strc_b[i], buyTimes[i], diffDate_b[i] ])    
         res_b.append(curr_res)
     i = i + 1
 
@@ -264,19 +272,17 @@ while i<len(EUb):
 
 
 
+features_b_df = getDF(features_b)
+res_b_df = getDF(res_b)
+b_df = pd.merge(features_b_df, res_b_df, left_on='id', right_on='id')
+del b_df['id']
+b_df.to_csv('out_b.csv',index=False)
 
-
-# Machine learning
-#clf = MLPClassifier(solver='lbfgs', alpha=1e-5,hidden_layer_sizes=(8,), random_state=1)
-#clf.fit(features_b, res_b)
-
-
-
-
-
-
-
-
+features_s_df = getDF(features_s)
+res_s_df = getDF(res_s)
+s_df = pd.merge(features_s_df, res_s_df, left_on='id', right_on='id')
+del s_df['id']
+s_df.to_csv('out_s.csv',index=False)
 
 
 
